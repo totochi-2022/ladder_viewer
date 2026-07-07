@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ladder_viewer demo</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: light-dark(#fafafa, #1b1b1f);
+    color: light-dark(#1a1a1a, #d8d8d8);
+  }
+  header { padding: 8px 14px; font-size: 13px; opacity: .8; }
+  main { flex: 1; display: flex; min-height: 0; gap: 1px; }
+  textarea {
+    flex: 0 0 34%; resize: none; border: none; outline: none;
+    padding: 12px; font: inherit; font-size: 13px; line-height: 1.5;
+    background: light-dark(#fff, #232327); color: inherit;
+    border-right: 1px solid light-dark(#ddd, #333);
+  }
+  #view { flex: 1; overflow: auto; padding: 12px; }
+  /* ハイライト色はホスト側で決める（未指定なら core の既定色） */
+  /* :root { --ladder-hl: #0a84ff; } */
+</style>
+</head>
+<body>
+<header>kvlist → ラダー図デモ — 左のニーモニックを編集すると即描画。接点/コイルにホバーでクロスリファレンス。</header>
+<main>
+  <textarea id="src" spellcheck="false">; 自己保持回路
+LD    R000   ; 起動PB
+OR    MR000
+ANB   R001   ; 停止PB
+OUT   MR000  ; 運転保持
+
+; 分岐 (MPS/MRD/MPP)
+LD    MR000
+MPS
+AND   R002   ; 手動モード
+OUT   Y000   ; 表示灯
+MRD
+AND   R003
+OUT   Y001
+MPP
+TMR   T000 #100
+
+; ブロック結合 (ANL/ORL)
+LD    R010
+LD    R011
+AND   R012
+ORL
+ANB   R013
+OUT   Y002
+</textarea>
+  <div id="view"><ladder-diagram id="dia"></ladder-diagram></div>
+</main>
+<script type="module">
+  import './ladder-diagram.mjs';
+  const src = document.getElementById('src');
+  const dia = document.getElementById('dia');
+  const update = () => { dia.source = src.value; };
+  src.addEventListener('input', update);
+  update();
+</script>
+</body>
+</html>

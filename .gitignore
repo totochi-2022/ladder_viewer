@@ -1,0 +1,5 @@
+node_modules/
+*.log
+
+# 実機由来の非公開データ（ローカルのみ、git 管理外）
+sample/
