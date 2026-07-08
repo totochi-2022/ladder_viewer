@@ -337,8 +337,14 @@ function foldScripts(rungs) {
 //   ② scripts: GUIでボックスを配置して本文を貼るためのチェックリスト
 // に分ける。入力は ;= 記法で書いたノートの kvlist を想定。
 function exportForPaste(source, opts = {}) {
-  const dummy = opts.dummy ?? 'MR9999'; // スクリプトラングの右側を埋めるダミー出力先(空きデバイス)
+  const dummy = opts.dummy ?? 'MR1000'; // スクリプトラングの右側を埋めるダミー出力先(空きデバイス)
   const { rungs, errors } = parse(source);
+  // ビットデバイスの下2桁はビット番号(00-15)。範囲外だと KV STUDIO は
+  // エラー内容を出さずに読み込み失敗するので、ここで警告する
+  const mBit = dummy.match(/^(?:MR|LR|CR|R)\d*(\d{2})$/);
+  if (mBit && Number(mBit[1]) > 15) {
+    errors.push({ line: 0, msg: `ダミー ${dummy}: ビット番号 ${mBit[1]} は不正 (00-15)。KV STUDIO は無言で読み込み失敗する` });
+  }
   const dropLine = (l) => {
     const t = l.trim();
     return !t || /^DEVICE:/.test(t) || /^;\s*(MODULE(_TYPE)?|SCRIPT_TYPE):/.test(t) ||

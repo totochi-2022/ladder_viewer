@@ -10,7 +10,8 @@
 //   node kvlist2paste.mjs --mnm 出力.mnm ノート.kvlist  # KV STUDIO 読み込み用 .mnm を生成
 //        --module 名前   モジュール名 (省略時は出力ファイル名から)
 //        --device 53     DEVICE ヘッダ値 (機種コード、既定 53)
-//        --dummy MR9999  スクリプトラングの右側を埋めるダミー出力先 (要・空きデバイス)
+//        --dummy MR1000  スクリプトラングの右側を埋めるダミー出力先
+//                        (要・空きデバイス。ビット番号は00-15、範囲外だとKVが無言で読み込み失敗)
 //   node kvlist2paste.mjs --clip ノート.kvlist          # ①を Windows クリップボードへ
 //        (KV STUDIO には貼れない。チャット等へ渡す用)
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -26,7 +27,7 @@ const opt = (name) => {
 const useClip = argv.includes('--clip');
 const mnmPath = opt('--mnm');
 const device = opt('--device') ?? '53';
-const dummy = opt('--dummy') ?? 'MR9999';
+const dummy = opt('--dummy') ?? 'MR1000';
 const positional = argv.filter((a, i) => !a.startsWith('--') && !['--mnm', '--module', '--device', '--dummy'].includes(argv[i - 1]));
 const file = positional[0];
 
