@@ -79,6 +79,8 @@ echo "generated: $out"
 
 # 起動中の vivify-server は古い config/scripts を保持しているので落とす。
 # viv クライアントが次回起動時(,,V)に新プロセスを立ち上げ、新しい glue が注入される。
-if pkill -x vivify-server 2>/dev/null; then
+# 注: SEA ビルドの vivify-server はプロセス名が "MainThread" になるため名前では殺せない。
+#     listen ポート(31622)で特定する。
+if fuser -k 31622/tcp >/dev/null 2>&1; then
   echo "vivify-server killed (次の ,,V で新 glue が反映される)"
 fi
