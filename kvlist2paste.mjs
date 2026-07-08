@@ -71,7 +71,7 @@ if (scripts.length) {
   console.log('');
   console.log('======== ② スクリプトボックス（GUIで配置して本文を貼る） ========');
   scripts.forEach((s, k) => {
-    console.log(`--- ${k + 1}個目: 条件↓のラングのダミー OUT を削除し、スクリプトボックスに置き換え ---`);
+    console.log(`--- ${k + 1}個目: 条件↓のラングの SET ダミーの隣にスクリプトボックスを追加 (SET は残してよい) ---`);
     console.log(s.cond ?? '(条件なし: 左レール直結)');
     console.log('--- ボックス本文 ---');
     console.log(s.lines.join('\n'));

@@ -351,27 +351,35 @@ export function exportForPaste(source, opts = {}) {
         if (g.fork) for (const br of g.fork.br) collect(br, acc);
         return acc;
       };
-      for (const lines of collect(r, [])) {
+      const boxes = collect(r, []);
+      // 元テキストの掃除: エクスポート由来の NCJ(折り畳み済みの代替コード断片)と、
+      // スクリプト原文の重複コメント(再生成のたびに増殖する)を除く
+      const norm = (s) => s.replace(/\s+/g, ' ').trim();
+      const echo = new Set(boxes.flat().map(norm));
+      const clean = srcLines.filter((l) => {
+        const t = l.trim();
+        if (/^NCJ(\s|$)/i.test(t)) return false;
+        if (t.startsWith(';') && echo.has(norm(t.slice(1)))) return false;
+        return true;
+      });
+      for (const lines of boxes) {
         scripts.push({
           rung: i + 1,
-          cond: srcLines.filter((l) => !l.trim().startsWith(';')).join('\n') || null,
+          cond: clean.filter((l) => !l.trim().startsWith(';')).join('\n') || null,
           lines,
         });
       }
-      const hasOtherOut = countOuts(r) > nSbox;
-      if (!hasOtherOut) {
-        // 条件+スクリプトのみのラング: 代替ニモーニック(NCJ〜LABEL)は読み込み拒否要因なので
-        // 出さないが、条件部(左ブロック)は復元に必要なので残す。右側は出力が無いと
-        // 回路不成立で読み込めないため、ダミー出力を置く(ボックス作成時に置き換える)。
-        // OUT だと複数スクリプトで二重コイルエラーになるため SET を使う(同一デバイス複数可)。
-        // スクリプト原文はエクスポートと同じ並び(;原文 → 条件)のコメント行にして位置の目印に
-        const parts = [];
-        for (const o of collect(r, [])) parts.push(o.map((l) => `;${l}`).join('\n'));
-        if (srcLines.length) parts.push(srcLines.join('\n'));
-        parts.push(`SET ${dummy} ; ダミー(スクリプトボックスに置換)`);
-        ladderParts.push(parts.join('\n'));
-        return;
-      }
+      // スクリプト原文はエクスポートと同じ並び(;原文 → 条件)のコメント行にして位置の目印に。
+      // 条件部(左ブロック)は復元に必要なので残す。出力が1つも無いラングは回路不成立で
+      // 読み込めないため、ダミー出力を足す(SET なら同一デバイス複数でも二重コイルにならない)。
+      // SET を残したままボックスを併設した実機エクスポートでは SET が既に出力として
+      // 残っているので、その場合ダミーは足さない
+      const parts = [];
+      for (const b of boxes) parts.push(b.map((l) => `;${l}`).join('\n'));
+      if (clean.length) parts.push(clean.join('\n'));
+      if (countOuts(r) <= nSbox) parts.push(`SET ${dummy} ; ダミー(スクリプトボックスに置換)`);
+      ladderParts.push(parts.join('\n'));
+      return;
     }
     if (srcLines.length) ladderParts.push(srcLines.join('\n'));
   });
