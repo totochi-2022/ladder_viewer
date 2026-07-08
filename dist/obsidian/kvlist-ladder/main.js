@@ -336,7 +336,8 @@ function foldScripts(rungs) {
 //              (スクリプトボックスだけのラングは出力が無くなるので丸ごと除外)
 //   ② scripts: GUIでボックスを配置して本文を貼るためのチェックリスト
 // に分ける。入力は ;= 記法で書いたノートの kvlist を想定。
-function exportForPaste(source) {
+function exportForPaste(source, opts = {}) {
+  const dummy = opts.dummy ?? 'MR9999'; // スクリプトラングの右側を埋めるダミー出力先(空きデバイス)
   const { rungs, errors } = parse(source);
   const dropLine = (l) => {
     const t = l.trim();
@@ -363,10 +364,15 @@ function exportForPaste(source) {
       }
       const hasOtherOut = countOuts(r) > nSbox;
       if (!hasOtherOut) {
-        // 条件+スクリプトのみのラング: 条件と代替ニモーニックは出せない(読み込み拒否要因)ので、
-        // 実機で読み込み可と実証された「原文をコメント行で残す」形式に変換
-        // (KV STUDIO 読み込み後、この位置に GUI でボックスを再作成する目印になる)
-        for (const o of collect(r, [])) ladderParts.push(o.map((l) => `;${l}`).join('\n'));
+        // 条件+スクリプトのみのラング: 代替ニモーニック(NCJ〜LABEL)は読み込み拒否要因なので
+        // 出さないが、条件部(左ブロック)は復元に必要なので残す。右側は出力が無いと
+        // 回路不成立で読み込めないため、ダミー OUT を置く(ボックス作成時に置き換える)。
+        // スクリプト原文はエクスポートと同じ並び(;原文 → 条件)のコメント行にして位置の目印に
+        const parts = [];
+        for (const o of collect(r, [])) parts.push(o.map((l) => `;${l}`).join('\n'));
+        if (srcLines.length) parts.push(srcLines.join('\n'));
+        parts.push(`OUT ${dummy} ; ダミー(スクリプトボックスに置換)`);
+        ladderParts.push(parts.join('\n'));
         return;
       }
     }

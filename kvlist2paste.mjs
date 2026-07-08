@@ -10,6 +10,7 @@
 //   node kvlist2paste.mjs --mnm 出力.mnm ノート.kvlist  # KV STUDIO 読み込み用 .mnm を生成
 //        --module 名前   モジュール名 (省略時は出力ファイル名から)
 //        --device 53     DEVICE ヘッダ値 (機種コード、既定 53)
+//        --dummy MR9999  スクリプトラングの右側を埋めるダミー出力先 (要・空きデバイス)
 //   node kvlist2paste.mjs --clip ノート.kvlist          # ①を Windows クリップボードへ
 //        (KV STUDIO には貼れない。チャット等へ渡す用)
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -25,11 +26,12 @@ const opt = (name) => {
 const useClip = argv.includes('--clip');
 const mnmPath = opt('--mnm');
 const device = opt('--device') ?? '53';
-const positional = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--mnm' && argv[i - 1] !== '--module' && argv[i - 1] !== '--device');
+const dummy = opt('--dummy') ?? 'MR9999';
+const positional = argv.filter((a, i) => !a.startsWith('--') && !['--mnm', '--module', '--device', '--dummy'].includes(argv[i - 1]));
 const file = positional[0];
 
 const src = readFileSync(file ?? 0, 'utf8');
-const { ladder, scripts, errors } = exportForPaste(src);
+const { ladder, scripts, errors } = exportForPaste(src, { dummy });
 
 for (const e of errors) {
   console.error(`⚠ ${e.line ? `L${e.line}: ` : ''}${e.msg}`);
@@ -68,7 +70,7 @@ if (scripts.length) {
   console.log('');
   console.log('======== ② スクリプトボックス（GUIで配置して本文を貼る） ========');
   scripts.forEach((s, k) => {
-    console.log(`--- ${k + 1}個目: 条件↓のラングを作成し、右にスクリプトボックスを配置 ---`);
+    console.log(`--- ${k + 1}個目: 条件↓のラングのダミー OUT を削除し、スクリプトボックスに置き換え ---`);
     console.log(s.cond ?? '(条件なし: 左レール直結)');
     console.log('--- ボックス本文 ---');
     console.log(s.lines.join('\n'));

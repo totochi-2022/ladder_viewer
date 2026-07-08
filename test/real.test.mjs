@@ -173,10 +173,10 @@ ANB MR3014
 LD MR3014
 OUT Y001`);
   assert.equal(errors.length, 0);
-  // スクリプトのみのラング: 条件は除外、原文はコメント行で位置を残す(実機で読み込み可の形式)
-  assert.ok(!ladder.includes('MR3013'));
+  // スクリプトのみのラング: 代替ニモーニックは出さず、原文コメント＋条件部(復元に必要)を残す
+  assert.ok(ladder.includes(';MR3012 = 1\nLD MR3013\nAND MR3014'));
+  assert.ok(ladder.includes(';MR3012 = 0\nLD MR3013\nANB MR3014'));
   assert.ok(!ladder.includes(';='));
-  assert.ok(ladder.includes(';MR3012 = 1'));
   assert.ok(ladder.includes('OUT MR000'));
   assert.ok(ladder.includes('OUT Y001'));
   // チェックリスト: 2ボックス、条件と本文が対応
