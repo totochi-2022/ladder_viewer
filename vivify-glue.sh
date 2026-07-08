@@ -76,3 +76,9 @@ GLUE
 
 node --check "$out"
 echo "generated: $out"
+
+# 起動中の vivify-server は古い config/scripts を保持しているので落とす。
+# viv クライアントが次回起動時(,,V)に新プロセスを立ち上げ、新しい glue が注入される。
+if pkill -x vivify-server 2>/dev/null; then
+  echo "vivify-server killed (次の ,,V で新 glue が反映される)"
+fi
