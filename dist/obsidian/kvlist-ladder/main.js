@@ -63,7 +63,7 @@ function par(children) {
 
 // ---------------------------------------------------------------- パーサ
 
-function parse(source) {
+function parse(source, opts = {}) {
   const rungs = [];
   const labels = Object.create(null); // dev → インラインコメント（初出優先）
   const errors = [];
@@ -90,20 +90,23 @@ function parse(source) {
     }
   }
 
-  function endRung() {
+  function endRung(lnEnd) {
     while (ctxs.length > 1) {
       const c = ctxs.pop();
       cur().fork.br.push(branchOf(c));
     }
     const b = ctxs[0];
     if (b.stack.length || b.outs.length || b.fork) {
-      rungs.push({ title, ...branchOf(b) });
+      // src: このラングを構成する元テキスト（直前のコメント行を含む）。貼り戻しキットで使う
+      rungs.push({ title, ...branchOf(b), src: lines.slice(srcStart, lnEnd).join('\n') });
     }
+    srcStart = lnEnd ?? srcStart;
     ctxs = [newCtx()];
     title = null;
   }
 
   const lines = String(source ?? '').split(/\r?\n/);
+  let srcStart = 0;
   for (let ln = 0; ln < lines.length; ln++) {
     const raw = lines[ln];
     const ci = raw.indexOf(';');
@@ -111,9 +114,26 @@ function parse(source) {
     const code = (ci >= 0 ? raw.slice(0, ci) : raw).trim();
 
     if (!code) {
-      // ラング直前の行コメント → タイトル（KVの ;MODULE: メタ行は除外、;<h1/> 見出しタグは剥がす）
-      if (cmt !== null && baseEmpty() && !/^MODULE(_TYPE)?:/.test(cmt)) {
-        title = cmt.replace(/^<h\d+\/>\s*/, '') || null;
+      if (cmt === null) continue;
+      // `;= コード` はスクリプトボックス記法（KVスクリプトを手書きするときの表現。
+      // KV STUDIO への貼り戻し時はコメントとして無視される）。連続行は同一ボックスに追記
+      if (cmt.startsWith('=')) {
+        const line = cmt.slice(1).replace(/^ /, '');
+        const c = cur();
+        const last = c.outs[c.outs.length - 1];
+        if (last && last.t === 'sbox') last.lines.push(line);
+        else c.outs.push({ t: 'sbox', lines: [line] });
+        continue;
+      }
+      // ラング直前の行コメント → タイトル（;MODULE: 等のメタ行は除外、;<h1/> 見出しタグは剥がす）。
+      // スクリプトボックスは「コンパイル済みラダー＋原文コメント」でエクスポートされるため、
+      // 出力確定後のコメントはラング区切り＋次ラングの見出しとして扱い、連続行は蓄積する
+      if (!/^(MODULE(_TYPE)?|SCRIPT_TYPE):/.test(cmt)) {
+        if (cur().outs.length) endRung(ln);
+        if (baseEmpty()) {
+          const line = cmt.replace(/^<h\d+\/>\s*/, '');
+          if (line) title = title ? title + '\n' + line : line;
+        }
       }
       continue;
     }
@@ -123,7 +143,7 @@ function parse(source) {
     const args = parts.slice(1);
 
     if (IGNORE_OPS.has(op) || /^DEVICE:/.test(op)) { // DEVICE:53 はファイルヘッダ
-      if (op === 'END' || op === 'ENDH') endRung();
+      if (op === 'END' || op === 'ENDH') { endRung(ln); srcStart = ln + 1; }
       continue;
     }
 
@@ -133,7 +153,7 @@ function parse(source) {
     if (mCmp || ct) {
       // 出力確定後の LD は新しいラング（MPP後の最終分岐が開いたままでも区切る）
       const kind = mCmp ? mCmp[1] : ct[0];
-      if (kind === 'LD' && cur().outs.length) endRung();
+      if (kind === 'LD' && cur().outs.length) endRung(ln);
       let node;
       if (mCmp) {
         node = { t: 'cmp', op: mCmp[2] + (mCmp[3] || ''), args, cmt };
@@ -171,9 +191,9 @@ function parse(source) {
     }
 
     if (op === 'LABEL') { // ジャンプ先ラベルは独立した1ラング
-      endRung();
+      endRung(ln);
       cur().outs.push({ t: 'obox', op, args, dev: null, cmt });
-      endRung();
+      endRung(ln + 1);
       continue;
     }
 
@@ -245,9 +265,113 @@ function parse(source) {
     pushOut({ t: 'obox', op, args, dev, cmt });
     if (cmt && dev && labels[dev] === undefined) labels[dev] = cmt;
   }
-  endRung();
+  endRung(lines.length);
+  if (opts.foldScripts !== false) foldScripts(rungs);
+
+  // KV STUDIO の制約: 1回路ブロック(ラング)に置けるスクリプトボックスは1個
+  rungs.forEach((r, i) => {
+    const n = countSbox(r);
+    if (n > 1) {
+      errors.push({ line: 0, msg: `ラング${i + 1}: スクリプトボックスが${n}個 (KV STUDIOは1回路ブロックに1個まで。ラングを分けること)` });
+    }
+  });
 
   return { rungs, labels, errors };
+}
+
+function countSbox(g) {
+  let n = g.outs.filter((o) => o.t === 'sbox').length;
+  if (g.fork) for (const br of g.fork.br) n += countSbox(br);
+  return n;
+}
+
+// スクリプトボックスの折り畳み:
+// KVスクリプトは「条件 + NCJ #n / (原文コメント付きのコンパイル済みラング…) / LABEL #n」
+// の形でエクスポートされる（KV STUDIO の GUI では原文だけのボックス表示、＋で展開）。
+// これを検出して NCJ を sbox（原文表示）に置換し、コンパイル済みラングと LABEL を除去する。
+// 内側の全ラングに原文コメント（title）が付いている場合のみ折り畳む（手書きのジャンプは残す）。
+function foldScripts(rungs) {
+  const findNCJ = (g) => { // {outs, fork} から NCJ obox の位置を再帰検索
+    for (let k = 0; k < g.outs.length; k++) {
+      const o = g.outs[k];
+      if (o.t === 'obox' && o.op === 'NCJ' && o.args[0]) return { outs: g.outs, idx: k };
+    }
+    if (g.fork) {
+      for (const br of g.fork.br) {
+        const hit = findNCJ(br);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  };
+  for (let i = 0; i < rungs.length; i++) {
+    const hit = findNCJ(rungs[i]);
+    if (!hit) continue;
+    const label = hit.outs[hit.idx].args[0];
+    let j = -1;
+    for (let k = i + 1; k < rungs.length; k++) {
+      const r = rungs[k];
+      if (!r.cond && !r.fork && r.outs.length === 1 &&
+          r.outs[0].t === 'obox' && r.outs[0].op === 'LABEL' && r.outs[0].args[0] === label) {
+        j = k;
+        break;
+      }
+    }
+    if (j <= i + 1) continue; // LABEL 不在 or 中身なし
+    const inner = rungs.slice(i + 1, j);
+    if (!inner.every((r) => r.title)) continue; // 原文コメントなし = 手書きジャンプ
+    const lines = inner.flatMap((r) => r.title.split('\n'));
+    hit.outs[hit.idx] = { t: 'sbox', lines };
+    if (rungs[i].title && lines[0] === rungs[i].title) rungs[i].title = null; // 原文の重複表示を回避
+    rungs.splice(i + 1, j - i); // コンパイル済みラング + LABEL を除去
+  }
+}
+
+// ---------------------------------------------------------------- 貼り戻しキット
+
+// KV STUDIO へ戻すための素材を生成する。
+// スクリプトは .mnm 読み戻し不可・ペーストでもボックスに戻らない(一方通行)ため、
+//   ① ladder:  リスト編集へそのままペーストできる純ラダー部
+//              (スクリプトボックスだけのラングは出力が無くなるので丸ごと除外)
+//   ② scripts: GUIでボックスを配置して本文を貼るためのチェックリスト
+// に分ける。入力は ;= 記法で書いたノートの kvlist を想定。
+function exportForPaste(source) {
+  const { rungs, errors } = parse(source);
+  const dropLine = (l) => {
+    const t = l.trim();
+    return !t || /^DEVICE:/.test(t) || /^;\s*(MODULE(_TYPE)?|SCRIPT_TYPE):/.test(t) ||
+      /^(END|ENDH)\s*$/.test(t) || /^;=/.test(t);
+  };
+  const ladderParts = [];
+  const scripts = [];
+  rungs.forEach((r, i) => {
+    const srcLines = (r.src || '').split('\n').filter((l) => !dropLine(l));
+    const nSbox = countSbox(r);
+    if (nSbox > 0) {
+      const collect = (g, acc) => {
+        for (const o of g.outs) if (o.t === 'sbox') acc.push(o.lines);
+        if (g.fork) for (const br of g.fork.br) collect(br, acc);
+        return acc;
+      };
+      for (const lines of collect(r, [])) {
+        scripts.push({
+          rung: i + 1,
+          cond: srcLines.filter((l) => !l.trim().startsWith(';')).join('\n') || null,
+          lines,
+        });
+      }
+      const hasOtherOut = countOuts(r) > nSbox;
+      if (!hasOtherOut) return; // 条件+スクリプトのみのラングはペースト不可(出力なし)なので除外
+    }
+    if (srcLines.length) ladderParts.push(srcLines.join('\n'));
+  });
+  return { ladder: ladderParts.join('\n'), scripts, errors };
+}
+
+function countOuts(g) {
+  let n = g.outs.length;
+  if (g.fork) for (const br of g.fork.br) n += countOuts(br);
+  return n;
 }
 
 // ---------------------------------------------------------------- レイアウト
@@ -263,6 +387,10 @@ function width(n) { // セル数
     case 'ct': case 'coil': case 'pulse': return 1;
     case 'cmp': return 2;
     case 'obox': return n.args.length ? 2 : 1; // EXT 等の引数なしボックスは幅1
+    case 'sbox': { // スクリプトボックス: 最長行に合わせる
+      const len = Math.max(...n.lines.map((l) => l.length));
+      return Math.min(6, Math.max(3, Math.ceil((len * 6.8 + 30) / CW)));
+    }
     case 'ser': case 'ochain': return n.ch.reduce((s, c) => s + width(c), 0);
     case 'par': return Math.max(...n.ch.map(width));
     default: return 1;
@@ -271,11 +399,14 @@ function width(n) { // セル数
 
 function height(n) { // 行数
   switch (n.t) {
+    case 'sbox': return Math.max(1, Math.ceil((n.lines.length * 15 + 22) / RH));
     case 'ser': case 'ochain': return Math.max(...n.ch.map(height));
     case 'par': return n.ch.reduce((s, c) => s + height(c), 0);
     default: return 1;
   }
 }
+
+const outsRows = (outs) => outs.reduce((s, o) => s + height(o), 0);
 
 function groupSize(g) { // g = {cond, fork, outs}
   const condW = g.cond ? width(g.cond) : 0;
@@ -284,10 +415,10 @@ function groupSize(g) { // g = {cond, fork, outs}
     const brs = g.fork.br.map(groupSize);
     const forkW = Math.max(1, ...brs.map((b) => b.w));
     const forkH = brs.reduce((s, b) => s + b.h, 0) || 1;
-    return { w: condW + forkW, h: Math.max(condH, forkH + g.outs.length) };
+    return { w: condW + forkW, h: Math.max(condH, forkH + outsRows(g.outs)) };
   }
   const outsW = g.outs.length ? Math.max(...g.outs.map(width)) : 0;
-  return { w: condW + outsW, h: Math.max(condH, g.outs.length, 1) };
+  return { w: condW + outsW, h: Math.max(condH, outsRows(g.outs), 1) };
 }
 
 // ---------------------------------------------------------------- SVG生成
@@ -304,6 +435,8 @@ const STYLE = `
 .ladder-svg .lad-dev{font-size:12px;text-anchor:middle}
 .ladder-svg .lad-cmt{font-size:10px;opacity:.72;text-anchor:middle}
 .ladder-svg .lad-boxtext{font-size:11px;text-anchor:middle}
+.ladder-svg .lad-code{font-size:11px;text-anchor:start}
+.ladder-svg .lad-sdev:hover{text-decoration:underline}
 .ladder-svg .lad-mark{font-size:10px;text-anchor:middle}
 .ladder-svg .lad-title{font-size:11px;opacity:.8}
 .ladder-svg .lad-err{font-size:11px;fill:var(--ladder-err,#e5484d)}
@@ -312,7 +445,7 @@ const STYLE = `
 `.trim();
 
 function renderSVG(source, opts = {}) {
-  const { rungs, labels, errors } = parse(source);
+  const { rungs, labels, errors } = parse(source, { foldScripts: opts.foldScripts });
   const label = (n) =>
     n.cmt || (n.dev != null && (labels[n.dev] ?? opts.comments?.[n.dev])) || null;
 
@@ -425,8 +558,30 @@ function renderSVG(source, opts = {}) {
     }
   }
 
+  // スクリプト本文中のデバイス風トークンに data-dev を振る（ラダー⇔スクリプトのクロスリファレンス）
+  function scriptLineHTML(line) {
+    return esc(line).replace(/@?[A-Z]{1,3}\d{1,5}(?:\.[A-Z]{1,2})?/g, (m) => {
+      const dev = m.replace(/\.[A-Z]{1,2}$/, '');
+      return `<tspan class="lad-sdev" data-dev="${dev}">${m}</tspan>`;
+    });
+  }
+
+  function drawScriptBox(o, x, y, w) {
+    const boxH = o.lines.length * 15 + 13;
+    out.push('<g class="lad-el lad-script">');
+    out.push(`<title>${esc(o.lines.join('\n'))}</title>`);
+    hline(x, x + 8, y);
+    hline(x + w - 8, x + w, y);
+    out.push(`<rect class="lad-sym" x="${x + 8}" y="${y - 14}" width="${w - 16}" height="${boxH}" rx="3"/>`);
+    o.lines.forEach((line, k) => {
+      out.push(`<text class="lad-code" x="${x + 18}" y="${y + 4 + k * 15}">${scriptLineHTML(line)}</text>`);
+    });
+    out.push('</g>');
+  }
+
   function drawOut(o, x, y) {
     if (o.t === 'coil') drawCoil(o, x, y);
+    else if (o.t === 'sbox') drawScriptBox(o, x, y, width(o) * CW);
     else if (o.t === 'ochain') { // CON で直列連結された出力ボックス列
       let cx = x;
       for (const item of o.ch) {
@@ -464,7 +619,7 @@ function renderSVG(source, opts = {}) {
         hline(outsX, railR - ow, oy);
         drawOut(o, railR - ow, oy);
         lastY = oy;
-        oy += RH;
+        oy += height(o) * RH;
       }
       vline(outsX, y, lastY);
     } else if (g.cond) {
@@ -479,8 +634,11 @@ function renderSVG(source, opts = {}) {
     const r = rungs[i];
     out.length = 0;
     if (r.title) {
-      text(railL + 2, y + 12, 'lad-title', `; ${r.title}`);
-      y += TITLE_H;
+      for (const line of r.title.split('\n')) {
+        text(railL + 2, y + 12, 'lad-title', `; ${line}`);
+        y += TITLE_H * 0.75;
+      }
+      y += TITLE_H * 0.25;
     }
     drawGroup(r, railL, y + RH / 2);
     body.push(out.join(''));
@@ -488,7 +646,7 @@ function renderSVG(source, opts = {}) {
   }
   out.length = 0;
   for (const e of errors) {
-    text(railL + 2, y + 12, 'lad-err', `⚠ L${e.line}: ${e.msg}`);
+    text(railL + 2, y + 12, 'lad-err', e.line ? `⚠ L${e.line}: ${e.msg}` : `⚠ ${e.msg}`);
     y += 16;
   }
   if (!rungs.length && !errors.length) {
