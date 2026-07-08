@@ -75,10 +75,6 @@ function parse(source, opts = {}) {
   const cur = () => ctxs[ctxs.length - 1];
   const joinStack = (stack) => (stack.length ? ser(stack) : null);
   const branchOf = (c) => ({ cond: joinStack(c.stack), fork: c.fork, outs: c.outs });
-  const baseEmpty = () => {
-    const b = ctxs[0];
-    return ctxs.length === 1 && !b.stack.length && !b.outs.length && !b.fork;
-  };
 
   function closeInnermost() {
     const c = ctxs.pop();
@@ -125,15 +121,13 @@ function parse(source, opts = {}) {
         else c.outs.push({ t: 'sbox', lines: [line] });
         continue;
       }
-      // ラング直前の行コメント → タイトル（;MODULE: 等のメタ行は除外、;<h1/> 見出しタグは剥がす）。
-      // スクリプトボックスは「コンパイル済みラダー＋原文コメント」でエクスポートされるため、
-      // 出力確定後のコメントはラング区切り＋次ラングの見出しとして扱い、連続行は蓄積する
+      // 行コメント → 所属ラングのタイトル（;MODULE: 等のメタ行は除外、;<h1/> 見出しタグは剥がす）。
+      // 出力確定後のコメントはラング区切り＋次ラングの見出し（スクリプト原文コメントがこの形）。
+      // ラング途中（条件の合間）のコメントも構築中ラングのタイトルに合流。連続行は蓄積する
       if (!/^(MODULE(_TYPE)?|SCRIPT_TYPE):/.test(cmt)) {
         if (cur().outs.length) endRung(ln);
-        if (baseEmpty()) {
-          const line = cmt.replace(/^<h\d+\/>\s*/, '');
-          if (line) title = title ? title + '\n' + line : line;
-        }
+        const line = cmt.replace(/^<h\d+\/>\s*/, '');
+        if (line) title = title ? title + '\n' + line : line;
       }
       continue;
     }

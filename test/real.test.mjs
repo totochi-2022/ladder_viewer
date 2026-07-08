@@ -141,6 +141,12 @@ test(';= 記法でスクリプトボックスを手書きできる', () => {
   assert.ok(svg.includes('data-dev="DM100"'));
 });
 
+test('ラング途中のコメント行もタイトルに合流（捨てない）', () => {
+  const { rungs } = parse('LD A\n;途中メモ\nAND B\nOUT Y0');
+  assert.equal(rungs.length, 1);
+  assert.equal(rungs[0].title, '途中メモ');
+});
+
 test('連続コメント行は複数行タイトルに蓄積（インデントはtrimされる）', () => {
   const { rungs } = parse(';IF DM0 > 100 THEN\n;  DM2 = 0\n;ENDIF\nLD CR2002\nOUT Y0');
   assert.equal(rungs[0].title, 'IF DM0 > 100 THEN\nDM2 = 0\nENDIF');
