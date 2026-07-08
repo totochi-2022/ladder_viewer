@@ -366,12 +366,13 @@ function exportForPaste(source, opts = {}) {
       if (!hasOtherOut) {
         // 条件+スクリプトのみのラング: 代替ニモーニック(NCJ〜LABEL)は読み込み拒否要因なので
         // 出さないが、条件部(左ブロック)は復元に必要なので残す。右側は出力が無いと
-        // 回路不成立で読み込めないため、ダミー OUT を置く(ボックス作成時に置き換える)。
+        // 回路不成立で読み込めないため、ダミー出力を置く(ボックス作成時に置き換える)。
+        // OUT だと複数スクリプトで二重コイルエラーになるため SET を使う(同一デバイス複数可)。
         // スクリプト原文はエクスポートと同じ並び(;原文 → 条件)のコメント行にして位置の目印に
         const parts = [];
         for (const o of collect(r, [])) parts.push(o.map((l) => `;${l}`).join('\n'));
         if (srcLines.length) parts.push(srcLines.join('\n'));
-        parts.push(`OUT ${dummy} ; ダミー(スクリプトボックスに置換)`);
+        parts.push(`SET ${dummy} ; ダミー(スクリプトボックスに置換)`);
         ladderParts.push(parts.join('\n'));
         return;
       }
