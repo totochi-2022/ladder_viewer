@@ -352,7 +352,13 @@ export function exportForPaste(source) {
         });
       }
       const hasOtherOut = countOuts(r) > nSbox;
-      if (!hasOtherOut) return; // 条件+スクリプトのみのラングはペースト不可(出力なし)なので除外
+      if (!hasOtherOut) {
+        // 条件+スクリプトのみのラング: 条件と代替ニモーニックは出せない(読み込み拒否要因)ので、
+        // 実機で読み込み可と実証された「原文をコメント行で残す」形式に変換
+        // (KV STUDIO 読み込み後、この位置に GUI でボックスを再作成する目印になる)
+        for (const o of collect(r, [])) ladderParts.push(o.map((l) => `;${l}`).join('\n'));
+        return;
+      }
     }
     if (srcLines.length) ladderParts.push(srcLines.join('\n'));
   });

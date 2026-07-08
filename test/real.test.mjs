@@ -173,9 +173,10 @@ ANB MR3014
 LD MR3014
 OUT Y001`);
   assert.equal(errors.length, 0);
-  // スクリプトのみのラングはラダー部から除外される
+  // スクリプトのみのラング: 条件は除外、原文はコメント行で位置を残す(実機で読み込み可の形式)
   assert.ok(!ladder.includes('MR3013'));
   assert.ok(!ladder.includes(';='));
+  assert.ok(ladder.includes(';MR3012 = 1'));
   assert.ok(ladder.includes('OUT MR000'));
   assert.ok(ladder.includes('OUT Y001'));
   // チェックリスト: 2ボックス、条件と本文が対応
