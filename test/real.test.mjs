@@ -180,6 +180,13 @@ OUT Y001`);
   assert.deepEqual(scripts[1].lines, ['MR3012 = 0']);
 });
 
+test('``` 行で打ち切り (閉じフェンス書き間違いで後続mdを飲み込んだケース)', () => {
+  const { rungs, errors } = parse('LD R000\nOUT Y0\n```kvlist\n```chart\n{ type: "bar",');
+  assert.equal(rungs.length, 1); // 飲み込んだ行はボックス描画しない
+  assert.equal(rungs[0].outs[0].dev, 'Y0');
+  assert.ok(errors.some((e) => e.msg.includes('閉じフェンス')));
+});
+
 // sample/ は実機由来の非公開データなのでリポジトリに無いことがある（その場合スキップ）
 test('実機サンプル全ファイル: エラーゼロで parse + renderSVG が通る', (t) => {
   const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'sample');

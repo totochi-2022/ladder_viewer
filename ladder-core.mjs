@@ -128,6 +128,13 @@ export function parse(source, opts = {}) {
       continue;
     }
 
+    if (code.startsWith('```')) {
+      // 閉じフェンスの書き間違い(```kvlist 等)でブロックが閉じず、後続の markdown を
+      // 飲み込んでいる可能性が高い。ゴミ描画の代わりにヒントを出して以降を無視する
+      errors.push({ line: ln + 1, msg: '``` で始まる行: 閉じフェンスは言語名なしの ``` だけにする(ブロックが閉じていない可能性)' });
+      break;
+    }
+
     const parts = code.split(/\s+/);
     const op = parts[0].toUpperCase();
     const args = parts.slice(1);
